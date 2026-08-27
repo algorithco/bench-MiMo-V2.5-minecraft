@@ -777,8 +777,8 @@ function init(){
     if(!pointerLocked)return;
     selectedSlot=(selectedSlot+(e.deltaY>0?1:-1)+9)%9;updateUI();
   });
-  renderer.domElement.addEventListener('click',function(){
-    if(!pointerLocked&&!chatOpen){renderer.domElement.requestPointerLock();resumeAudio()}
+  document.getElementById('blocker').addEventListener('click',function(){
+    if(!chatOpen){renderer.domElement.requestPointerLock();resumeAudio()}
   });
   window.addEventListener('resize',function(){
     camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);
