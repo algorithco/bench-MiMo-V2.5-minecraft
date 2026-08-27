@@ -743,27 +743,31 @@ class ChatSystem {
     if (!pointerLocked) return;
     const target = getTargetBlock();
     if (!target) return;
+    const n = target.normal;
 
     if (e.button === 0) {
-      // Left click: mine
-      const px = Math.round(target.position[0] + target.normal[0] * 0.5);
-      const py = Math.round(target.position[1] + target.normal[1] * 0.5);
-      const pz = Math.round(target.position[2] + target.normal[2] * 0.5);
-      world.setVoxel(px, py, pz, BLOCK.AIR);
-      updateVoxelMesh(px, py, pz);
+      // Left click: mine the block that was hit
+      const px = Math.floor(target.position[0] - n[0] * 0.5);
+      const py = Math.floor(target.position[1] - n[1] * 0.5);
+      const pz = Math.floor(target.position[2] - n[2] * 0.5);
+      if (world.getVoxel(px, py, pz) !== BLOCK.AIR) {
+        world.setVoxel(px, py, pz, BLOCK.AIR);
+        updateVoxelMesh(px, py, pz);
+      }
     } else if (e.button === 2) {
-      // Right click: place
-      const px = Math.round(target.position[0] - target.normal[0] * 0.5);
-      const py = Math.round(target.position[1] - target.normal[1] * 0.5);
-      const pz = Math.round(target.position[2] - target.normal[2] * 0.5);
+      // Right click: place block adjacent to hit face
+      const px = Math.floor(target.position[0] + n[0] * 0.5);
+      const py = Math.floor(target.position[1] + n[1] * 0.5);
+      const pz = Math.floor(target.position[2] + n[2] * 0.5);
       // Don't place inside player
-      const dx = px - Math.floor(player.position.x);
-      const dy1 = py - Math.floor(player.position.y);
-      const dy2 = py - Math.floor(player.position.y + player.height);
-      const dz = pz - Math.floor(player.position.z);
-      if (Math.abs(dx) < 1.5 && Math.abs(dz) < 1.5 && (dy1 >= 0 && dy1 <= 1 || dy2 >= 0 && dy2 <= 1)) return;
-      world.setVoxel(px, py, pz, player.selectedBlock);
-      updateVoxelMesh(px, py, pz);
+      const bb = { x1: player.position.x - player.radius, x2: player.position.x + player.radius,
+                    y1: player.position.y, y2: player.position.y + player.height,
+                    z1: player.position.z - player.radius, z2: player.position.z + player.radius };
+      if (px + 1 > bb.x1 && px < bb.x2 && py + 1 > bb.y1 && py < bb.y2 && pz + 1 > bb.z1 && pz < bb.z2) return;
+      if (world.getVoxel(px, py, pz) === BLOCK.AIR) {
+        world.setVoxel(px, py, pz, player.selectedBlock);
+        updateVoxelMesh(px, py, pz);
+      }
     }
   });
   renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
