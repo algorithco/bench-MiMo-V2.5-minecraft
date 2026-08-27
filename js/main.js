@@ -2,9 +2,9 @@
   "use strict";
 
   var G = window.VoxelGame;
-  var scene, camera, renderer;
+  var scene, camera, renderer, material;
   var playerPos, playerVel, onGround, yaw, pitch;
-  var chat, hud, clock;
+  var chat, clock;
   var cellMeshes = {};
   var pointerLocked = false;
   var isDead = false;
@@ -12,10 +12,14 @@
   var lastTime = performance.now();
   var frameCount = 0, fpsTime = 0;
   var stepTimer = 0;
+  var selectedSlot = 0;
+  var blockTypes = ['GRASS', 'DIRT', 'STONE', 'WOOD', 'LEAVES'];
 
   var NEIGHBOR_OFFSETS = [[0,0,0],[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
 
   function init() {
+    G.Terrain.init(12345);
+
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
     scene.fog = new THREE.Fog(0x87ceeb, 50, 100);
@@ -33,15 +37,14 @@
     dirLight.position.set(50, 100, 50);
     scene.add(dirLight);
 
-    G.Textures.init();
-    var material = new THREE.MeshLambertMaterial({
-      map: G.Textures.getTexture(),
+    var texture = G.Textures.init();
+    material = new THREE.MeshLambertMaterial({
+      map: texture,
       side: THREE.FrontSide,
       alphaTest: 0.1
     });
-    G.Meshes.setMaterial(material);
 
-    G.Input.init();
+    G.Input.init(renderer.domElement);
     G.Particles.init(scene);
     G.Sky.init(scene, renderer, dirLight, ambLight);
     G.Sounds.init();
@@ -55,30 +58,43 @@
     pitch = 0;
     clock = new THREE.Clock();
 
+    ensureChunksAround(Math.floor(playerPos.x / 16), Math.floor(playerPos.z / 16));
+
     var startY = G.Terrain.getTerrainHeight(8, 8) + 2;
     playerPos.y = startY;
 
-    G.Terrain.ensureChunksAround(playerPos.x, playerPos.z);
     generateTrees();
     buildAllMeshes();
 
+    G.HUD.updateHotbar(0);
+    G.HUD.updateHealth(20);
+
     setupPointerLock();
     setupBlockInteraction();
-
-    G.HUD.updateHotbar(0, [1, 2, 3, 6, 7]);
-    G.HUD.updateHealth(20);
+    setupScrollWheel();
 
     animate();
   }
 
-  function generateTrees() {
-    var pdx = Math.floor(playerPos.x / G.CHUNK_SIZE);
-    var pdz = Math.floor(playerPos.z / G.CHUNK_SIZE);
+  function ensureChunksAround(pcx, pcz) {
     for (var dx = -G.RENDER_DISTANCE; dx <= G.RENDER_DISTANCE; dx++) {
       for (var dz = -G.RENDER_DISTANCE; dz <= G.RENDER_DISTANCE; dz++) {
         if (dx * dx + dz * dz > G.RENDER_DISTANCE * G.RENDER_DISTANCE) continue;
-        var bx = (pdx + dx) * G.CHUNK_SIZE + 8;
-        var bz = (pdz + dz) * G.CHUNK_SIZE + 8;
+        for (var cy = 0; cy < 4; cy++) {
+          G.Terrain.generateChunk(pcx + dx, cy, pcz + dz);
+        }
+      }
+    }
+  }
+
+  function generateTrees() {
+    var pdx = Math.floor(playerPos.x / 16);
+    var pdz = Math.floor(playerPos.z / 16);
+    for (var dx = -G.RENDER_DISTANCE; dx <= G.RENDER_DISTANCE; dx++) {
+      for (var dz = -G.RENDER_DISTANCE; dz <= G.RENDER_DISTANCE; dz++) {
+        if (dx * dx + dz * dz > G.RENDER_DISTANCE * G.RENDER_DISTANCE) continue;
+        var bx = (pdx + dx) * 16 + 8;
+        var bz = (pdz + dz) * 16 + 8;
         if (Math.random() < 0.5) G.Terrain.generateTree(bx, bz);
         if (Math.random() < 0.3) G.Terrain.generateTree(bx + 3, bz + 4);
       }
@@ -94,7 +110,7 @@
 
   function updateCellMesh(cx, cy, cz) {
     var id = cx + ',' + cy + ',' + cz;
-    var data = G.Meshes.createChunkMesh(cx, cy, cz);
+    var data = G.Chunks.generateCellGeometry(cx, cy, cz);
     if (data.positions.length === 0) {
       if (cellMeshes[id]) {
         scene.remove(cellMeshes[id]);
@@ -103,30 +119,31 @@
       }
       return;
     }
-    var mesh = cellMeshes[id];
-    var geo = mesh ? mesh.material && mesh.geometry ? mesh.geometry : new THREE.BufferGeometry() : new THREE.BufferGeometry();
+    var geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
     geo.setIndex(data.indices);
     geo.computeBoundingSphere();
-    if (!mesh) {
-      mesh = new THREE.Mesh(geo, G.Meshes.getMaterial());
-      cellMeshes[id] = mesh;
-      scene.add(mesh);
-    } else {
-      mesh.geometry = geo;
+
+    var oldMesh = cellMeshes[id];
+    var mesh = new THREE.Mesh(geo, material);
+    mesh.position.set(cx * 16, cy * 16, cz * 16);
+    cellMeshes[id] = mesh;
+    scene.add(mesh);
+    if (oldMesh) {
+      scene.remove(oldMesh);
+      oldMesh.geometry.dispose();
     }
-    mesh.position.set(cx * G.CHUNK_SIZE, cy * G.CHUNK_SIZE || 0, cz * G.CHUNK_SIZE);
   }
 
   function updateVoxelMesh(wx, wy, wz) {
     var updated = {};
     for (var i = 0; i < NEIGHBOR_OFFSETS.length; i++) {
       var o = NEIGHBOR_OFFSETS[i];
-      var cx = Math.floor((wx + o[0]) / G.CHUNK_SIZE);
-      var cy = Math.floor((wy + o[1]) / G.CHUNK_SIZE);
-      var cz = Math.floor((wz + o[2]) / G.CHUNK_SIZE);
+      var cx = Math.floor((wx + o[0]) / 16);
+      var cy = Math.floor((wy + o[1]) / 16);
+      var cz = Math.floor((wz + o[2]) / 16);
       var key = cx + ',' + cy + ',' + cz;
       if (!updated[key]) {
         updated[key] = true;
@@ -228,7 +245,7 @@
         var bb = { x1: playerPos.x - r, x2: playerPos.x + r, y1: playerPos.y, y2: playerPos.y + G.PLAYER_HEIGHT, z1: playerPos.z - r, z2: playerPos.z + r };
         if (ppx + 1 > bb.x1 && ppx < bb.x2 && ppy + 1 > bb.y1 && ppy < bb.y2 && ppz + 1 > bb.z1 && ppz < bb.z2) return;
         if (G.Chunks.getVoxel(ppx, ppy, ppz) === G.BLOCK.AIR) {
-          G.Chunks.setVoxel(ppx, ppy, ppz, chat.heldBlock || G.BLOCK.GRASS);
+          G.Chunks.setVoxel(ppx, ppy, ppz, G.BLOCK[blockTypes[selectedSlot]]);
           updateVoxelMesh(ppx, ppy, ppz);
           G.Sounds.playPlace();
         }
@@ -248,6 +265,36 @@
         highlightMesh.visible = false;
       }
     };
+  }
+
+  function setupScrollWheel() {
+    document.addEventListener('wheel', function (e) {
+      if (!pointerLocked) return;
+      if (e.deltaY > 0) {
+        selectedSlot = (selectedSlot + 1) % blockTypes.length;
+      } else {
+        selectedSlot = (selectedSlot - 1 + blockTypes.length) % blockTypes.length;
+      }
+      G.HUD.updateHotbar(selectedSlot);
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (chat.isOpen) return;
+      var num = parseInt(e.key, 10);
+      if (num >= 1 && num <= blockTypes.length) {
+        selectedSlot = num - 1;
+        G.HUD.updateHotbar(selectedSlot);
+      }
+      if (e.code === 'KeyT') {
+        e.preventDefault();
+        chat.toggle();
+        if (chat.isOpen) {
+          document.exitPointerLock();
+        } else {
+          renderer.domElement.requestPointerLock();
+        }
+      }
+    });
   }
 
   function collidesAt(x, y, z) {
@@ -304,9 +351,7 @@
   function updatePlayer(dt) {
     if (isDead) return;
     dt = Math.min(dt, 0.05);
-    var sprinting = G.Input.isDown('ShiftLeft') || G.Input.isDown('ShiftRight');
-    var speed = sprinting ? G.SPRINT_SPEED : G.PLAYER_SPEED;
-    var flying = chat.flying;
+    var speed = G.Input.isDown('ShiftLeft') ? G.SPRINT_SPEED : G.PLAYER_SPEED;
 
     var forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
     var right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
@@ -320,28 +365,22 @@
     playerVel.x = move.x * speed;
     playerVel.z = move.z * speed;
 
-    if (flying) {
-      playerVel.y = 0;
-      if (G.Input.isDown('Space')) playerVel.y = 8;
-      if (G.Input.isDown('ShiftLeft') || G.Input.isDown('ShiftRight')) playerVel.y = -8;
-    } else {
-      if (G.Input.isDown('Space') && onGround) {
-        playerVel.y = G.JUMP_FORCE;
-        onGround = false;
-        G.Sounds.playJump();
-      }
-      playerVel.y += G.GRAVITY * dt;
+    if (G.Input.isDown('Space') && onGround) {
+      playerVel.y = G.JUMP_FORCE;
+      onGround = false;
+      G.Sounds.playJump();
     }
+    playerVel.y += G.GRAVITY * dt;
 
     moveAxis('x', playerVel.x * dt);
     moveAxis('y', playerVel.y * dt);
     moveAxis('z', playerVel.z * dt);
 
-    if (!flying && onGround && move.lengthSq() > 0) {
+    if (onGround && move.lengthSq() > 0) {
       stepTimer += dt;
       if (stepTimer > 0.4) {
         stepTimer = 0;
-        G.Sounds.playStep(1);
+        G.Sounds.playStep('GRASS');
       }
     }
 
@@ -351,12 +390,12 @@
   }
 
   function updateChunks() {
-    var pcx = Math.floor(playerPos.x / G.CHUNK_SIZE);
-    var pcz = Math.floor(playerPos.z / G.CHUNK_SIZE);
+    var pcx = Math.floor(playerPos.x / 16);
+    var pcz = Math.floor(playerPos.z / 16);
     if (pcx !== lastChunkX || pcz !== lastChunkZ) {
       lastChunkX = pcx;
       lastChunkZ = pcz;
-      G.Terrain.ensureChunksAround(playerPos.x, playerPos.z);
+      ensureChunksAround(pcx, pcz);
       generateTrees();
       for (var key in G.Chunks.cells) {
         var parts = key.split(',').map(Number);
@@ -370,9 +409,10 @@
     var dt = clock.getDelta();
 
     if (pointerLocked && !chat.isOpen && !isDead) {
-      var md = G.Input.consumeMouse();
-      yaw -= md.dx * 0.002;
-      pitch -= md.dy * 0.002;
+      var md = G.Input.getMouseDelta();
+      G.Input.consumeMouse();
+      yaw -= md.x * 0.002;
+      pitch -= md.y * 0.002;
       pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
 
       updatePlayer(dt);
@@ -389,7 +429,6 @@
 
     G.Sky.update(dt);
     G.Particles.update(dt);
-    G.Particles.render();
 
     renderer.render(scene, camera);
 
@@ -412,5 +451,4 @@
   });
 
   document.getElementById('respawn-btn').addEventListener('click', respawn);
-  window._game = { scene: scene, playerPos: playerPos };
 })();
