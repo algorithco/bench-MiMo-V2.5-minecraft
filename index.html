@@ -28,6 +28,11 @@ canvas{display:block;width:100%;height:100%}
 #chat-input{width:100%;background:rgba(0,0,0,0.7);border:1px solid #555;color:#fff;font-size:14px;font-family:monospace;padding:6px 8px;outline:none;border-radius:2px}
 #chat-input:focus{border-color:#aaa}
 #gamemode-display{position:fixed;top:10px;right:10px;color:#fff;font-size:13px;font-family:monospace;z-index:20;text-shadow:1px 1px 2px #000}
+#death-screen{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(180,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:200;flex-direction:column}
+#death-screen h1{color:#fff;font-size:48px;font-family:monospace;text-shadow:3px 3px 6px #000;margin-bottom:20px}
+#death-screen p{color:#ddd;font-size:18px;font-family:monospace;text-shadow:1px 1px 2px #000;margin-bottom:30px}
+#death-screen button{background:#555;border:2px solid #fff;color:#fff;font-size:18px;font-family:monospace;padding:10px 30px;cursor:pointer;border-radius:4px}
+#death-screen button:hover{background:#777}
 </style>
 </head>
 <body>
@@ -44,6 +49,7 @@ canvas{display:block;width:100%;height:100%}
 <div id="crosshair"></div>
 <div id="hotbar"></div>
 <div id="chat-container"><div id="chat-messages"></div><div id="chat-input-wrap"><input id="chat-input" type="text" maxlength="200" placeholder="Type message or /help..." autocomplete="off"/></div></div>
+<div id="death-screen"><h1>You Died!</h1><p id="death-msg">Fell into the void</p><button id="respawn-btn">Respawn</button></div>
 <div id="gamemode-display">survival</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -811,6 +817,26 @@ class ChatSystem {
 
   // Chunk tracking
   let lastChunkX = -999, lastChunkZ = -999;
+  let isDead = false;
+
+  function respawn() {
+    isDead = false;
+    document.getElementById('death-screen').style.display = 'none';
+    const spawnY = world.getTerrainHeight(8, 8) + 2;
+    player.position.set(8, spawnY, 8);
+    player.velocity.set(0, 0, 0);
+    player.onGround = false;
+    renderer.domElement.requestPointerLock();
+  }
+  document.getElementById('respawn-btn').addEventListener('click', respawn);
+
+  function die(msg) {
+    if (isDead) return;
+    isDead = true;
+    document.getElementById('death-msg').textContent = msg || 'You died';
+    document.getElementById('death-screen').style.display = 'flex';
+    document.exitPointerLock();
+  }
 
   // Game loop
   let lastTime = performance.now();
@@ -820,8 +846,13 @@ class ChatSystem {
     const dt = (now - lastTime) / 1000;
     lastTime = now;
 
-    if (pointerLocked && !chat.isOpen) {
+    if (pointerLocked && !chat.isOpen && !isDead) {
       player.update(dt, world, keys, chat.flying);
+
+      // Death check - fell into void
+      if (player.position.y < -20) {
+        die('Fell into the void');
+      }
 
       // Update camera
       const eye = player.getEyePosition();
