@@ -18,7 +18,16 @@ canvas{display:block;width:100%;height:100%}
 .hotbar-slot{width:48px;height:48px;border:2px solid #555;background:rgba(0,0,0,0.6);margin:0 1px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-family:monospace}
 .hotbar-slot.selected{border-color:#fff;background:rgba(255,255,255,0.15)}
 .hotbar-slot .label{font-size:8px;text-align:center;margin-top:2px}
-
+#chat-container{position:fixed;bottom:70px;left:10px;width:420px;z-index:20;pointer-events:none}
+#chat-messages{max-height:180px;overflow-y:auto;scrollbar-width:none}
+#chat-messages::-webkit-scrollbar{display:none}
+.chat-msg{color:#fff;font-size:13px;font-family:monospace;text-shadow:1px 1px 2px #000;padding:2px 6px;background:rgba(0,0,0,0.4);margin-bottom:1px;border-radius:2px;word-wrap:break-word;animation:fadeIn .15s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.chat-msg.system{color:#aaa}.chat-msg.error{color:#f55}.chat-msg.success{color:#5f5}.chat-msg.info{color:#5af}.chat-msg.command{color:#ff5}
+#chat-input-wrap{pointer-events:all;display:none;margin-top:4px}
+#chat-input{width:100%;background:rgba(0,0,0,0.7);border:1px solid #555;color:#fff;font-size:14px;font-family:monospace;padding:6px 8px;outline:none;border-radius:2px}
+#chat-input:focus{border-color:#aaa}
+#gamemode-display{position:fixed;top:10px;right:10px;color:#fff;font-size:13px;font-family:monospace;z-index:20;text-shadow:1px 1px 2px #000}
 </style>
 </head>
 <body>
@@ -34,6 +43,8 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <div id="crosshair"></div>
 <div id="hotbar"></div>
+<div id="chat-container"><div id="chat-messages"></div><div id="chat-input-wrap"><input id="chat-input" type="text" maxlength="200" placeholder="Type message or /help..." autocomplete="off"/></div></div>
+<div id="gamemode-display">survival</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -396,7 +407,7 @@ class Player {
     return new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
   }
 
-  update(dt, world, keys) {
+  update(dt, world, keys, flying) {
     dt = Math.min(dt, 0.05);
     const sprinting = keys.has('ShiftLeft') || keys.has('ShiftRight');
     const speed = sprinting ? this.sprintSpeed : this.speed;
@@ -412,14 +423,19 @@ class Player {
     this.velocity.x = move.x * speed;
     this.velocity.z = move.z * speed;
 
-    // Jump
-    if (keys.has('Space') && this.onGround) {
-      this.velocity.y = this.jumpForce;
-      this.onGround = false;
+    if (flying) {
+      this.velocity.y = 0;
+      if (keys.has('Space')) this.velocity.y = 8;
+      if (keys.has('ShiftLeft') || keys.has('ShiftRight')) this.velocity.y = -8;
+    } else {
+      // Jump
+      if (keys.has('Space') && this.onGround) {
+        this.velocity.y = this.jumpForce;
+        this.onGround = false;
+      }
+      // Gravity
+      this.velocity.y += this.gravity * dt;
     }
-
-    // Gravity
-    this.velocity.y += this.gravity * dt;
 
     // Move with collision detection (per axis)
     this.moveAxis(world, 'x', this.velocity.x * dt);
@@ -458,6 +474,92 @@ class Player {
   }
 }
 
+// ============================================================
+// CHAT SYSTEM
+// ============================================================
+class ChatSystem {
+  constructor() {
+    this.isOpen = false;
+    this.messages = [];
+    this.maxMsgs = 50;
+    this.chatEl = document.getElementById('chat-messages');
+    this.inputWrap = document.getElementById('chat-input-wrap');
+    this.input = document.getElementById('chat-input');
+    this.gamemode = 'survival';
+    this.flying = false;
+    this.add('Welcome! Press T to chat. Type /help for commands.', 'info');
+  }
+  toggle() {
+    this.isOpen = !this.isOpen;
+    this.inputWrap.style.display = this.isOpen ? 'block' : 'none';
+    if (this.isOpen) { this.input.value = ''; this.input.focus(); }
+  }
+  add(text, type) {
+    type = type || '';
+    this.messages.push({ text, type });
+    if (this.messages.length > this.maxMsgs) this.messages.shift();
+    const el = document.createElement('div');
+    el.className = 'chat-msg ' + type;
+    el.textContent = text;
+    this.chatEl.appendChild(el);
+    while (this.chatEl.children.length > this.maxMsgs) this.chatEl.removeChild(this.chatEl.firstChild);
+    this.chatEl.scrollTop = this.chatEl.scrollHeight;
+  }
+  send(text) {
+    if (!text || !text.trim()) return;
+    this.add('<Player> ' + text, '');
+    if (text.startsWith('/')) this.cmd(text);
+  }
+  cmd(text) {
+    const p = text.toLowerCase().split(' ');
+    switch(p[0]) {
+      case '/help':
+        this.add('--- Commands ---','command');
+        this.add('/gamemode survival|creative','command');
+        this.add('/time day|night','command');
+        this.add('/tp <x> <y> <z>','command');
+        this.add('/fly','command');
+        this.add('/seed','command');
+        this.add('/clear','command');
+        break;
+      case '/gamemode':
+        if (p[1]==='survival'||p[1]==='creative') {
+          this.gamemode = p[1];
+          document.getElementById('gamemode-display').textContent = p[1];
+          this.add('Game mode: '+p[1],'success');
+        } else this.add('Usage: /gamemode survival|creative','error');
+        break;
+      case '/time':
+        if (p[1]==='day') {
+          window._scene.background.setHex(0x87ceeb); window._scene.fog.color.setHex(0x87ceeb);
+          this.add('Time: day','success');
+        } else if (p[1]==='night') {
+          window._scene.background.setHex(0x0a0a2e); window._scene.fog.color.setHex(0x0a0a2e);
+          this.add('Time: night','success');
+        } else this.add('Usage: /time day|night','error');
+        break;
+      case '/tp':
+        const tx=parseFloat(p[1])||0, ty=parseFloat(p[2])||40, tz=parseFloat(p[3])||0;
+        window._player.position.set(tx,ty,tz);
+        window._player.velocity.set(0,0,0);
+        this.add('Teleported to '+tx+', '+ty+', '+tz,'success');
+        break;
+      case '/fly':
+        window._chat.flying = !window._chat.flying;
+        this.add('Fly: '+(this.flying?'ON':'OFF'),'success');
+        break;
+      case '/seed':
+        this.add('Seed: '+window._seed,'info');
+        break;
+      case '/clear':
+        this.chatEl.innerHTML=''; this.messages=[];
+        this.add('Chat cleared','system');
+        break;
+      default:
+        this.add('Unknown: '+p[0]+'. Type /help','error');
+    }
+  }
+}
 (function main() {
   // Renderer
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -483,8 +585,15 @@ class Player {
   // World
   const world = new VoxelWorld();
 
+  // Chat
+  window._chat = new ChatSystem();
+  window._scene = scene;
+  window._seed = world.noise.p[0] * 256 + world.noise.p[1];
+  const chat = window._chat;
+
   // Player
   const player = new Player();
+  window._player = player;
   const startY = world.getTerrainHeight(8, 8) + 2;
   player.position.y = startY;
 
@@ -571,7 +680,25 @@ class Player {
   let pointerLocked = false;
 
   document.addEventListener('keydown', e => {
+    if (chat.isOpen) {
+      if (e.key === 'Escape') { chat.toggle(); e.preventDefault(); return; }
+      if (e.key === 'Enter') {
+        chat.send(chat.input.value);
+        chat.input.value = '';
+        chat.toggle();
+        renderer.domElement.requestPointerLock();
+        e.preventDefault();
+      }
+      return;
+    }
     keys.add(e.code);
+    if (e.code === 'KeyT' && pointerLocked) {
+      e.preventDefault();
+      keys.clear();
+      chat.toggle();
+      document.exitPointerLock();
+      return;
+    }
     if (e.code >= 'Digit1' && e.code <= 'Digit9') {
       const idx = parseInt(e.code.charAt(5)) - 1;
       if (idx < player.hotbar.length) {
@@ -585,10 +712,12 @@ class Player {
   // Pointer lock
   const blocker = document.getElementById('blocker');
   blocker.addEventListener('click', () => {
+    if (chat.isOpen) return;
     renderer.domElement.requestPointerLock();
   });
   document.addEventListener('pointerlockchange', () => {
     pointerLocked = !!document.pointerLockElement;
+    if (chat.isOpen) { blocker.style.display = 'none'; return; }
     blocker.style.display = pointerLocked ? 'none' : 'flex';
   });
   document.addEventListener('mousemove', e => {
@@ -687,8 +816,8 @@ class Player {
     const dt = (now - lastTime) / 1000;
     lastTime = now;
 
-    if (pointerLocked) {
-      player.update(dt, world, keys);
+    if (pointerLocked && !chat.isOpen) {
+      player.update(dt, world, keys, chat.flying);
 
       // Update camera
       const eye = player.getEyePosition();
