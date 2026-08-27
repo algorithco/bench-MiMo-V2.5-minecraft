@@ -82,7 +82,7 @@ canvas{display:block;width:100%;height:100%}
 // ============================================================
 var CHUNK = 16;
 var WHEIGHT = 64;
-var RENDIST = 4;
+var RENDIST = 3;
 var BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WATER:5, WOOD:6, LEAVES:7 };
 var BNAME = ['Air','Grass','Dirt','Stone','Sand','Water','Wood','Leaves'];
 var GRAVITY = 0.08;
@@ -102,9 +102,10 @@ var SimplexNoise=(function(){var F3=1/3,G3=1/6;function SN(r){if(!r)r=Math;this.
 // GLOBALS
 // ============================================================
 var scene, camera, renderer;
-var simplex = new SimplexNoise(12345);
-var caveNoise = new SimplexNoise(12346);
-var treeNoise = new SimplexNoise(12347);
+function makeRng(s){var o={s:s,random:function(){o.s=Math.sin(o.s)*43758.5453;return o.s-Math.floor(o.s)}};return o}
+var simplex = new SimplexNoise(makeRng(12345));
+var caveNoise = new SimplexNoise(makeRng(12346));
+var treeNoise = new SimplexNoise(makeRng(12347));
 var worldCells = {};
 var meshMap = {};
 var material, breakMaterial;
@@ -755,8 +756,16 @@ function init(){
 
   ensureChunks(Math.floor(playerPos.x/CHUNK),Math.floor(playerPos.z/CHUNK));
 
-  // Build all meshes
-  for(var k in worldCells){var p=k.split(',').map(Number);buildCellMesh(p[0],p[1],p[2])}
+  // Build only nearby meshes first
+  var pcx=Math.floor(playerPos.x/CHUNK),pcz=Math.floor(playerPos.z/CHUNK);
+  for(var dy=0;dy<4;dy++){
+    var key=pcx+','+dy+','+pcz;
+    if(worldCells[key]) buildCellMesh(pcx,dy,pcz);
+  }
+  // Rest built in animate loop
+  var meshBuildQueue=[];
+  for(var k in worldCells){if(!meshMap[k]) meshBuildQueue.push(k)}
+  window._meshBuildQueue=meshBuildQueue;
 
   initUI();
   initBreakOverlay();
@@ -930,6 +939,18 @@ function animate(){
 
   updateSky(dt);
   updateParticles(dt);
+
+  // Lazy mesh building - build a few per frame
+  if(window._meshBuildQueue&&window._meshBuildQueue.length>0){
+    for(var i=0;i<3&&window._meshBuildQueue.length>0;i++){
+      var k=window._meshBuildQueue.pop();
+      if(!meshMap[k]&&worldCells[k]){
+        var pp=k.split(',').map(Number);
+        buildCellMesh(pp[0],pp[1],pp[2]);
+      }
+    }
+  }
+
   renderer.render(scene,camera);
 
   frameCount++;fpsTime+=dt;
