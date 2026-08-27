@@ -206,10 +206,6 @@ function getBlockUV(blockType, face){
   else row=1;// side
   var u0=col/ATLAS_COLS, u1=(col+1)/ATLAS_COLS;
   var v0=1-(row+1)/3, v1=1-row/3;
-  // Special: wood top uses col 6 (WOOD top tile is at col 6)
-  if(blockType===BLOCK.WOOD && (face===2||face===3)){
-    col=6;u0=col/ATLAS_COLS;u1=(col+1)/ATLAS_COLS;
-  }
   return [u0,v0,u1,v1];
 }
 
@@ -379,10 +375,11 @@ function genCellGeometry(cx,cy,cz){
       }
       // Fix UVs based on face
       var u0=bdata[0],v0=bdata[1],u1=bdata[2],v1=bdata[3];
-      uv[(vc)*8+0]=u0;uv[(vc)*8+1]=v1;
-      uv[(vc)*8+2]=u1;uv[(vc)*8+3]=v1;
-      uv[(vc)*8+4]=u1;uv[(vc)*8+5]=v0;
-      uv[(vc)*8+6]=u0;uv[(vc)*8+7]=v0;
+      var ui=vc*2;
+      uv[ui+0]=u0;uv[ui+1]=v1;
+      uv[ui+2]=u1;uv[ui+3]=v1;
+      uv[ui+4]=u1;uv[ui+5]=v0;
+      uv[ui+6]=u0;uv[ui+7]=v0;
       idx2.push(vc,vc+1,vc+2,vc,vc+2,vc+3);
       vc+=4;
     }
