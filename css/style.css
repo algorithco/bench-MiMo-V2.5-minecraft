@@ -1,0 +1,53 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+canvas { display: block; width: 100%; height: 100%; }
+
+#blocker {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.75); display: flex; align-items: center;
+  justify-content: center; z-index: 100; cursor: pointer;
+}
+#blocker .msg {
+  color: #fff; font-size: 22px; text-align: center; line-height: 2; font-family: monospace;
+}
+
+#crosshair {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 10; pointer-events: none;
+}
+#crosshair::before, #crosshair::after {
+  content: ''; position: absolute; background: rgba(255,255,255,0.8);
+}
+#crosshair::before { width: 20px; height: 2px; left: -10px; top: -1px; }
+#crosshair::after { width: 2px; height: 20px; left: -1px; top: -10px; }
+
+#hotbar {
+  position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 10; display: flex; pointer-events: none;
+}
+.hotbar-slot {
+  width: 48px; height: 48px; border: 2px solid #555;
+  background: rgba(0,0,0,0.6); margin: 0 1px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #fff; font-family: monospace;
+}
+.hotbar-slot.selected { border-color: #fff; background: rgba(255,255,255,0.15); }
+.hotbar-slot .label { font-size: 8px; text-align: center; margin-top: 2px; }
+
+#gamemode-display {
+  position: fixed; top: 10px; right: 10px; color: #fff; font-size: 13px;
+  font-family: monospace; z-index: 20; text-shadow: 1px 1px 2px #000;
+}
+
+#death-screen {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(180,0,0,0.6); display: none; align-items: center;
+  justify-content: center; z-index: 200; flex-direction: column;
+}
+#death-screen h1 { color: #fff; font-size: 48px; font-family: monospace; text-shadow: 3px 3px 6px #000; margin-bottom: 20px; }
+#death-screen p { color: #ddd; font-size: 18px; font-family: monospace; text-shadow: 1px 1px 2px #000; margin-bottom: 30px; }
+#death-screen button {
+  background: #555; border: 2px solid #fff; color: #fff; font-size: 18px;
+  font-family: monospace; padding: 10px 30px; cursor: pointer; border-radius: 4px;
+}
+#death-screen button:hover { background: #777; }
